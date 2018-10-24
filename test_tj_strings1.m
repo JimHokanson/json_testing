@@ -3,8 +3,8 @@ fliplr(dec2bin(data.real_string_mask(2),32))
 str = repmat({'This is a test" it is'},1,1e7);
 str2 = uint8(jsonencode(str));
 
-length(str2) - floor(length(str2)/32)*32
-str3 = char(str2);
+%length(str2) - floor(length(str2)/32)*32
+%str3 = char(str2);
 
 N = 100;
 ta = time_averager(N);
