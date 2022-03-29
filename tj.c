@@ -40,6 +40,319 @@
     mxAddField(plhs[0],#y); \
     mxSetField(plhs[0],0,#y,mx_temp);  
 
+//Other approach
+//remove the rightmost 1 in x : x & (x-1)
+//extract the rightmost 1 in x : x&-x
+//smear right at 1 an up x : x xor (x-1)
+    
+// int x = 8+4;
+//   //Yields rightmost bit
+//   printf("%d\n",x & -x); //4
+//   //Smears righmost bit
+//   printf("%d\n",x | (x-1)); //15 => 8 4 2 1 all set - 2 and 1 from smear
+//   //Turn off rightmost bit
+//   printf("%d\n",x & (x-1)); //8
+//   return 0;    
+
+void getStructQuotes(uint64_t *bm_quote_mov, uint64_t *bm_backslash_mov,uint64_t bsq){
+
+    uint64_t temp_quote_word = *bm_quote_mov; //This might get modified ...
+    
+    //Make backslashes 0, 1 for everything else
+    //We'll use this to count zeros to get # of backslashes
+    uint64_t inverted_bs = ~(*bm_backslash_mov); //0 => \     1 => else 
+            
+    int bsq_loc;
+    int n_quote_escapes = __builtin_popcount(bsq);
+    for (int j = 0; j < n_quote_escapes; j++){
+        //Find current quote
+        
+        _BitScanReverse64 (&bsq_loc, bsq);
+                
+        //Zero out found location so next loop doesn't find it again ...
+        bsq &= ~((uint64_t)1 << bsq_loc); 
+                
+                //Set everything high to zero to allow finding first
+                //non-backslash character
+             	inverted_bs2 = _bzhi_u32(inverted_bs,bsq_loc);
+                
+                // "this is a \\\\\"test"
+                //                 x <= bsq_loc
+                //  111111111100000000000 <= inverted_bs2        
+                
+                //TODO: consider 0 check then _bit_scan_reverse
+                //  since _lzcnt_u32 has high latency
+                //Counting zeros instead of finding non-backslash
+                //because we might have all backslashes which would 
+                //lead to undefined behavior for _bit_scan_reverse
+                //Lat: 3, CPI: 1
+                n_zeros = _lzcnt_u32(inverted_bs2);
+                if (n_zeros == 32){
+                    //Then need to go back even further :/
+                    //TODO
+                    n_backslashes = 1;
+                }else{
+                    //If bsq_loc == 31 then 1 zero means 0 backslashes
+                    //0 = 1 - (X - 31)
+                    //If bsq_loc == 30 then 2 zeros means 0 backslashes
+                    //0 = 2 - (X - 30)
+                    //If bsq_loc == 30 then 3 zeros means 1 backslashes
+                    //1 = 3 - (X - 30)
+                    n_backslashes = n_zeros - (32 - bsq_loc);
+                }
+                
+//                 if (!printed){
+//                     printed = 1;
+//                     mexPrintf("a: %d\n",n_backslashes); //2
+//                     mexPrintf("b: %d\n",n_zeros); //23
+//                     mexPrintf("c: %d\n",bsq_loc); //10
+//                     mexPrintf("d: %d\n",inverted_bs2); //511
+//                     mexPrintf("e: %d\n",temp_quote_word);
+//                 }
+                
+                //Avoid this, might not have any ones ...        
+                //non_bs_loc = _bit_scan_reverse(inverted_bs2);
+                //n_backslashes = bsq_loc-non_bs_loc-1;
+                
+                temp_quote_word &= ~((n_backslashes & 1) << bsq_loc);
+                
+            }
+            
+            *bm_quote_mov = temp_quote_word;
+}
+    
+void altApproach(uint64_t *bm_quote_mov,uint64_t *bm_backslash_mov,uint64_t n){
+
+    
+    //  0010000000000100000010000 <= "
+    //  0000100000111000000100000 <= \
+    //  0000000000000100000010000 <= bsq
+    //  1111011111000111111011111 <= inverted bs
+    //               o  => x & -x
+    //  11110111110000  =>              
+    
+    //  1) popcnt
+    //  2 _bit_scan_forward to bsq
+    //  3) grab all \ left - count zeros
+    
+    
+    //  0010000000000100000010000 <= "
+    //  0000100000111000000100000 <= \
+    //  0000000000000100000010000 <= bsq
+    //  
+    //  1) popcnt - to know # to run
+    //  2) x & -x to get target location
+    //  3) x & (x-1) get all low values
+    //  4) zero count?
+    
+    // 
+    
+    //TODO: Support first row ...
+    
+    for (uint64_t i = 1; i<n; i++){
+        bsq = ((*bm_backslash_mov_prev >> 63) | (*bm_backslash_mov << 1)) & *bm_quote_mov;
+        
+        if (bsq){
+            //Call method
+            
+            
+        }
+        //TODO:
+    }
+    
+    
+}
+    
+void getStructQuotes64(uint64_t *bm_quote_mov, 
+        uint64_t *bm_backslash_mov,uint64_t *m2){
+
+    int printed = 0;
+    uint64_t bsq;
+    uint64_t inverted_bs;
+    uint64_t inverted_bs2;
+    int bsq_loc;
+    int n_quote_escapes;
+    int n_backslashes;
+    uint32_t n_zeros;
+    int current_set_bit;
+    
+    int temp_quote_word;
+    
+    uint32_t *bm_backslash_mov_prev;
+    uint32_t *bm_backslash_mov_prev2;
+    
+    //Advance past 1st word ...
+    ++bm_quote_mov;
+    ++bm_backslash_mov;
+    
+    bm_backslash_mov_prev = bm_backslash_mov-1;
+    
+    for (; bm_quote_mov < m2; bm_quote_mov++){
+        
+        bsq = ((*bm_backslash_mov_prev >> 31) | (*bm_backslash_mov << 1)) & *bm_quote_mov;
+
+        //Only update if we have any \" 
+        if (bsq){
+            temp_quote_word = *bm_quote_mov; //This might get modified ...
+            inverted_bs = ~(*bm_backslash_mov); //0 => \     1 => else 
+            
+            n_quote_escapes = __builtin_popcount(bsq);
+            for (int j = 0; j < n_quote_escapes; j++){
+                //Find current quote
+                bsq_loc = _bit_scan_reverse(bsq);
+                
+                //Zero out found location so next loop doesn't find it again ...
+                bsq &= ~(1 << bsq_loc); 
+                
+                //Set everything high to zero to allow finding first
+                //non-backslash character
+             	inverted_bs2 = _bzhi_u32(inverted_bs,bsq_loc);
+                
+                // "this is a \\\\\"test"
+                //                 x <= bsq_loc
+                //  111111111100000000000 <= inverted_bs2        
+                
+                //TODO: consider 0 check then _bit_scan_reverse
+                //  since _lzcnt_u32 has high latency
+                //Counting zeros instead of finding non-backslash
+                //because we might have all backslashes which would 
+                //lead to undefined behavior for _bit_scan_reverse
+                //Lat: 3, CPI: 1
+                n_zeros = _lzcnt_u32(inverted_bs2);
+                if (n_zeros == 32){
+                    //Then need to go back even further :/
+                    //TODO
+                    n_backslashes = 1;
+                }else{
+                    //If bsq_loc == 31 then 1 zero means 0 backslashes
+                    //0 = 1 - (X - 31)
+                    //If bsq_loc == 30 then 2 zeros means 0 backslashes
+                    //0 = 2 - (X - 30)
+                    //If bsq_loc == 30 then 3 zeros means 1 backslashes
+                    //1 = 3 - (X - 30)
+                    n_backslashes = n_zeros - (32 - bsq_loc);
+                }
+                
+//                 if (!printed){
+//                     printed = 1;
+//                     mexPrintf("a: %d\n",n_backslashes); //2
+//                     mexPrintf("b: %d\n",n_zeros); //23
+//                     mexPrintf("c: %d\n",bsq_loc); //10
+//                     mexPrintf("d: %d\n",inverted_bs2); //511
+//                     mexPrintf("e: %d\n",temp_quote_word);
+//                 }
+                
+                //Avoid this, might not have any ones ...        
+                //non_bs_loc = _bit_scan_reverse(inverted_bs2);
+                //n_backslashes = bsq_loc-non_bs_loc-1;
+                
+                temp_quote_word &= ~((n_backslashes & 1) << bsq_loc);
+                
+            }
+            
+            *bm_quote_mov = temp_quote_word;
+        }
+        ++bm_backslash_mov;
+        ++bm_backslash_mov_prev;        
+    }    
+    
+}
+    
+void getStructQuotes32(uint32_t *bm_quote_mov, 
+        uint32_t *bm_backslash_mov,uint32_t *m2){
+
+    int printed = 0;
+    uint32_t bsq;
+    uint32_t inverted_bs;
+    uint32_t inverted_bs2;
+    int bsq_loc;
+    int n_quote_escapes;
+    int n_backslashes;
+    uint32_t n_zeros;
+    int current_set_bit;
+    
+    int temp_quote_word;
+    
+    uint32_t *bm_backslash_mov_prev;
+    uint32_t *bm_backslash_mov_prev2;
+    
+    //Advance past 1st word ...
+    ++bm_quote_mov;
+    ++bm_backslash_mov;
+    
+    bm_backslash_mov_prev = bm_backslash_mov-1;
+    
+    for (; bm_quote_mov < m2; bm_quote_mov++){
+        
+        bsq = ((*bm_backslash_mov_prev >> 31) | (*bm_backslash_mov << 1)) & *bm_quote_mov;
+
+        //Only update if we have any \" 
+        if (bsq){
+            temp_quote_word = *bm_quote_mov; //This might get modified ...
+            inverted_bs = ~(*bm_backslash_mov); //0 => \     1 => else 
+            
+            n_quote_escapes = __builtin_popcount(bsq);
+            for (int j = 0; j < n_quote_escapes; j++){
+                //Find current quote
+                bsq_loc = _bit_scan_reverse(bsq);
+                
+                //Zero out found location so next loop doesn't find it again ...
+                bsq &= ~(1 << bsq_loc); 
+                
+                //Set everything high to zero to allow finding first
+                //non-backslash character
+             	inverted_bs2 = _bzhi_u32(inverted_bs,bsq_loc);
+                
+                // "this is a \\\\\"test"
+                //                 x <= bsq_loc
+                //  111111111100000000000 <= inverted_bs2        
+                
+                //TODO: consider 0 check then _bit_scan_reverse
+                //  since _lzcnt_u32 has high latency
+                //Counting zeros instead of finding non-backslash
+                //because we might have all backslashes which would 
+                //lead to undefined behavior for _bit_scan_reverse
+                //Lat: 3, CPI: 1
+                n_zeros = _lzcnt_u32(inverted_bs2);
+                if (n_zeros == 32){
+                    //Then need to go back even further :/
+                    //TODO
+                    n_backslashes = 1;
+                }else{
+                    //If bsq_loc == 31 then 1 zero means 0 backslashes
+                    //0 = 1 - (X - 31)
+                    //If bsq_loc == 30 then 2 zeros means 0 backslashes
+                    //0 = 2 - (X - 30)
+                    //If bsq_loc == 30 then 3 zeros means 1 backslashes
+                    //1 = 3 - (X - 30)
+                    n_backslashes = n_zeros - (32 - bsq_loc);
+                }
+                
+//                 if (!printed){
+//                     printed = 1;
+//                     mexPrintf("a: %d\n",n_backslashes); //2
+//                     mexPrintf("b: %d\n",n_zeros); //23
+//                     mexPrintf("c: %d\n",bsq_loc); //10
+//                     mexPrintf("d: %d\n",inverted_bs2); //511
+//                     mexPrintf("e: %d\n",temp_quote_word);
+//                 }
+                
+                //Avoid this, might not have any ones ...        
+                //non_bs_loc = _bit_scan_reverse(inverted_bs2);
+                //n_backslashes = bsq_loc-non_bs_loc-1;
+                
+                temp_quote_word &= ~((n_backslashes & 1) << bsq_loc);
+                
+            }
+            
+            *bm_quote_mov = temp_quote_word;
+        }
+        ++bm_backslash_mov;
+        ++bm_backslash_mov_prev;        
+    }    
+    
+}
+    
     
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray*prhs[])
 {
@@ -61,7 +374,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray*prhs[])
         
     
         
-    char *m = data + (n/32)*32;
+    
     
     //Add 1 to take care of any floaters (if any)
     int n_qwords = n/64 + 1;
@@ -76,29 +389,19 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray*prhs[])
     BM_PTR *bm_backslash_mov = mxMalloc(n_qwords*sizeof(int64_t));
     BM_PTR *bm_backslash = bm_backslash_mov;
     
-    BM_PTR *bm_lb_mov = mxMalloc(n_qwords*sizeof(int64_t));
-    BM_PTR *bm_lb = bm_lb_mov;
-    
-    BM_PTR *bm_rb_mov = mxMalloc(n_qwords*sizeof(int64_t));
-    BM_PTR *bm_rb = bm_rb_mov;
-    
-    BM_PTR *bm_comma_mov = mxMalloc(n_qwords*sizeof(int64_t));
-    BM_PTR *bm_comma = bm_comma_mov;
-    
-    
+//     BM_PTR *bm_lb_mov = mxMalloc(n_qwords*sizeof(int64_t));
+//     BM_PTR *bm_lb = bm_lb_mov;
+//     
+//     BM_PTR *bm_rb_mov = mxMalloc(n_qwords*sizeof(int64_t));
+//     BM_PTR *bm_rb = bm_rb_mov;
+//     
+//     BM_PTR *bm_comma_mov = mxMalloc(n_qwords*sizeof(int64_t));
+//     BM_PTR *bm_comma = bm_comma_mov;
     
     //30ms - ",\
     //41ms - + {
     //63ms - " \ { } ,
-    
-    
-    
-    
-//     uint64_t *bm_quote_mov = mxMalloc(n_out*sizeof(int64_t));
-//     uint64_t *bm_quote = bm_quote_mov;
-//     
-//     uint64_t *bm_backslash_mov = mxMalloc(n_out*sizeof(int64_t));
-//     uint64_t *bm_backslash = bm_backslash_mov;
+
     TOC(step0,time_step0);
     
     TIC(step1);
@@ -108,113 +411,46 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray*prhs[])
     //-----------------------------------------------------
     __m256i c_quote = _mm256_set1_epi8 ('"');
     __m256i c_backslash = _mm256_set1_epi8 ('\\');
-    __m256i c_lb = _mm256_set1_epi8 ('{');
-    __m256i c_rb = _mm256_set1_epi8 ('}');
-    __m256i c_comma = _mm256_set1_epi8 (',');
+//     __m256i c_lb = _mm256_set1_epi8 ('{');
+//     __m256i c_rb = _mm256_set1_epi8 ('}');
+//     __m256i c_comma = _mm256_set1_epi8 (',');
+    __m256i mm_data;
     
-//     char *i = data;
-//     for (; i < m; i+=32){
-//         __m256i temp = _mm256_loadu_si256 ((const __m256i *)i);
-//         __m256i result1 = _mm256_cmpeq_epi8 (temp,c_quote);
-//         __m256i result2 = _mm256_cmpeq_epi8 (temp,c_backslash);
-//         *bm_quote_mov = _mm256_movemask_epi8(result1);
-//         ++bm_quote_mov;
-//         *bm_backslash_mov = _mm256_movemask_epi8(result2);
-//         ++bm_backslash_mov;
-//     }
-    
-    __m256i temp;
-    __m256i temp2;
-    __m256i temp3;
-    __m256i temp4;
-    char *data_mov = data;
-    char *data_mov2;
-    char *data_mov3;
-    char *data_mov4;
-    
-    //1) Loop unrolled ...
-    //---------------------------------------------------
-//     for (int j = 0; j < (n/32)-3; j+=4){
-//         data_mov = data + j*32;
-//         data_mov2 = data + (j+1)*32;
-//         data_mov3 = data + (j+2)*32;
-//         data_mov4 = data + (j+3)*32;
-//         temp = _mm256_loadu_si256 ((const __m256i *)data_mov);
-//         temp2 = _mm256_loadu_si256 ((const __m256i *)data_mov2);
-//         temp3 = _mm256_loadu_si256 ((const __m256i *)data_mov3);
-//         temp4 = _mm256_loadu_si256 ((const __m256i *)data_mov4);
-//         //bm_quote_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_quote));
-//         //bm_backslash_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_backslash));
-//         bm_quote_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (c_quote,temp));
-//         bm_quote_mov[j+1] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (c_quote,temp2));
-//         bm_quote_mov[j+2] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (c_quote,temp3));
-//         bm_quote_mov[j+3] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (c_quote,temp4));
-//         bm_backslash_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (c_backslash,temp));
-//         bm_backslash_mov[j+1] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (c_backslash,temp2));
-//         bm_backslash_mov[j+2] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (c_backslash,temp3));
-//         bm_backslash_mov[j+3] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (c_backslash,temp4));
-//     }
-    
-    
-    //Index based (Standard reference - 30 ms)
-//     for (int j = 0; j < (n/32); j++){
-//         data_mov = data + j*32;
-//         temp = _mm256_loadu_si256 ((const __m256i *)data_mov);
-//         bm_quote_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_quote));
-//         bm_backslash_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_backslash));
-//     }
-    
-    //Changing index type - still 30 ms
-    for (uint64_t j = 0; j < (n/32); j++){
-        data_mov = data + j*32;
-        temp = _mm256_loadu_si256 ((const __m256i *)data_mov);
-        bm_quote_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_quote));
-        bm_backslash_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_backslash));
-        bm_lb_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_lb));
-        bm_rb_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_rb));
-        bm_comma_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_comma));
+    char *m = data + (n/64)*64;
+    char *i = data;
+    for (; i<m; i+=32){
+        mm_data = _mm256_loadu_si256 ((const __m256i *)i);
+        *bm_quote_mov = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (mm_data,c_quote));
+        *bm_backslash_mov = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (mm_data,c_backslash));
+        ++bm_backslash_mov;
+        ++bm_quote_mov;
+//         *bm_lb_mov = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (mm_data,c_lb));
+//         ++bm_lb_mov;
+//         *bm_rb_mov = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (mm_data,c_rb));
+//         ++bm_rb_mov;
+//         *bm_comma_mov = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (mm_data,c_comma));
+//         ++bm_comma_mov;
     }
-    
-//     //Changing how we move the data pointer - maybe 31 ms
-//     for (uint64_t j = 0; j < (n/32); j++){
-//         temp = _mm256_loadu_si256 ((const __m256i *)data_mov);
-//         bm_quote_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_quote));
-//         bm_backslash_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_backslash));
-//         data_mov+=32;
-//     }
-    
-    //Yet to try - writing to 64 bit number ...
-    
-    //Writing to 64 bit number ...
-    //----------------------------------------
-//     int temp_mask;
-//     for (int j = 0; j < (n/64); j++){
-//         data_mov = data + j*64;
-//         temp = _mm256_loadu_si256 ((const __m256i *)data_mov);
-//         temp2 = _mm256_loadu_si256 ((const __m256i *)data_mov+32);
-//         *bm_quote_mov = (_mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_quote)) << 32) | _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp2,c_quote));
-//         ++bm_quote_mov;
-//         //bm_quote_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_quote));
-//         //bm_backslash_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (temp,c_backslash));
-//         //bm_quote_mov[j] = _mm256_movemask_epi8(_mm256_cmpeq_epi8 (c_quote,temp));
-//     }
-    
-    
-    
-//     //Zero out last word
-//     *bm_quote_mov = 0;
-//     *bm_backslash_mov = 0;
-    
-//     int bit_position = 0;
-//     for (; i < m; i++){
-//         *bm_quote_mov |= ((*i == '"') << bit_position);
-//         *bm_backslash_mov |= ((*i == '\\') << bit_position);
-//         ++bit_position;
-//     }
 
+    //Zero out last word
+    *bm_quote_mov = 0;
+    *bm_backslash_mov = 0;
+    
+    m = data + n;
+    int bit_position = 0;
+    for (; i < m; i++){
+        *bm_quote_mov |= ((*i == '"') << bit_position);
+        *bm_backslash_mov |= ((*i == '\\') << bit_position);
+        ++bit_position;
+    }
     
     
     TOC(step1,time_step1);
+    
+    //TODO: Make sure first char is not \
+    TIC(step2)
+    getStructQuotes32(bm_quote,bm_backslash,bm_quote_mov);
+    TOC(step2,time_step2);
     
     
     mx_temp = mxCreateNumericMatrix(1, 0, mxUINT64_CLASS, 0);
@@ -222,6 +458,12 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray*prhs[])
     mxSetN(mx_temp,n_qwords);
     mxAddField(plhs[0],"real_string_mask"); \
     mxSetField(plhs[0],0,"real_string_mask",mx_temp); 
+    
+    mx_temp = mxCreateNumericMatrix(1, 0, mxUINT64_CLASS, 0);
+    mxSetData(mx_temp,bm_backslash);
+    mxSetN(mx_temp,n_qwords);
+    mxAddField(plhs[0],"bs_mask"); \
+    mxSetField(plhs[0],0,"bs_mask",mx_temp); 
     
 }
     

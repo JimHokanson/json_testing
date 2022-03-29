@@ -8,10 +8,11 @@ classdef time_averager < handle
         fieldnames = {
             'step0'
             'step1'
+            'step2'
         }
         step0
         step1
-        
+        step2
     end
     
     methods
